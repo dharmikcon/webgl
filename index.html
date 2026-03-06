@@ -24,6 +24,9 @@
       var loadingBar = document.querySelector("#unity-loading-bar");
       var progressBarFull = document.querySelector("#unity-progress-bar-full");
       var warningBanner = document.querySelector("#unity-warning");
+      var micPermissionGranted = false;
+      var micPermissionRequested = false;
+      var unityInstanceRef = null;
 
       // Shows a temporary message banner/ribbon for a few seconds, or
       // a permanent error message on top of the canvas if type=='error'.
@@ -47,6 +50,87 @@
           }, 5000);
         }
         updateBannerVisibility();
+      }
+
+      function setMicPermissionStatus(msg, isError) {
+        if (!msg) return;
+        unityShowBanner(msg, isError ? "warning" : "warning");
+      }
+
+      function tryEnableUnityWebGLAudioFlow() {
+        if (!unityInstanceRef || typeof unityInstanceRef.SendMessage !== "function") {
+          return;
+        }
+
+        var targetObjects = [
+          "ConvaiManager",
+          "Convai Manager",
+          "ConvaiRoomManager",
+          "Convai Room Manager"
+        ];
+
+        for (var i = 0; i < targetObjects.length; i++) {
+          try {
+            unityInstanceRef.SendMessage(targetObjects[i], "EnableAudioAndStartListening");
+          } catch (e1) {
+            try {
+              unityInstanceRef.SendMessage(targetObjects[i], "EnableAudioPlayback");
+            } catch (e2) {
+              // Keep trying remaining object names.
+            }
+          }
+        }
+      }
+
+      async function requestMicrophonePermission() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          setMicPermissionStatus("Microphone API is not available in this browser.", true);
+          unityShowBanner("Microphone API is not available in this browser.", "warning");
+          return false;
+        }
+
+        if (!window.isSecureContext) {
+          setMicPermissionStatus("Microphone requires HTTPS or localhost.", true);
+          unityShowBanner("Microphone requires HTTPS or localhost.", "warning");
+          return false;
+        }
+
+        try {
+          setMicPermissionStatus("Requesting microphone permission...", false);
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          stream.getTracks().forEach((t) => t.stop());
+          micPermissionGranted = true;
+          setMicPermissionStatus("Microphone permission granted.", false);
+          tryEnableUnityWebGLAudioFlow();
+
+          return true;
+        } catch (err) {
+          const message = (err && err.message) ? err.message : "Microphone permission denied.";
+          setMicPermissionStatus(message, true);
+          unityShowBanner("Microphone permission denied.", "warning");
+          return false;
+        }
+      }
+
+      function armMicrophonePermissionOnFirstGesture() {
+        if (micPermissionRequested || micPermissionGranted) return;
+
+        var requestOnce = async function() {
+          if (micPermissionRequested || micPermissionGranted) return;
+          micPermissionRequested = true;
+          teardown();
+          await requestMicrophonePermission();
+        };
+
+        var teardown = function() {
+          window.removeEventListener("pointerdown", requestOnce, true);
+          window.removeEventListener("keydown", requestOnce, true);
+          window.removeEventListener("touchstart", requestOnce, true);
+        };
+
+        window.addEventListener("pointerdown", requestOnce, true);
+        window.addEventListener("keydown", requestOnce, true);
+        window.addEventListener("touchstart", requestOnce, true);
       }
 
       var buildUrl = "Build";
@@ -93,7 +177,12 @@
         createUnityInstance(canvas, config, (progress) => {
           progressBarFull.style.width = 100 * progress + "%";
         }).then((unityInstance) => {
+          unityInstanceRef = unityInstance;
           loadingBar.style.display = "none";
+          armMicrophonePermissionOnFirstGesture();
+          if (micPermissionGranted) {
+            tryEnableUnityWebGLAudioFlow();
+          }
         }).catch((message) => {
           alert(message);
         });
