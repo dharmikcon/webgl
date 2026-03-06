@@ -40,11 +40,23 @@
       }).catch((message) => {
         alert(message);
       });
-	  document.addEventListener("click", function () {
+document.addEventListener("click", async function () {
+
+    // Resume Unity audio
     if (typeof unityInstance !== "undefined") {
         unityInstance.Module.resumeAudioContext();
     }
-});
+
+    // Request microphone permission
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        console.log("Microphone permission granted");
+        window.micStream = stream;
+    } catch (err) {
+        console.log("Microphone permission denied:", err);
+    }
+
+}, { once: true });
 	  
     </script>
   </body>
