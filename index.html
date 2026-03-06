@@ -40,6 +40,12 @@
       }).catch((message) => {
         alert(message);
       });
+	  document.addEventListener("click", function () {
+    if (typeof unityInstance !== "undefined") {
+        unityInstance.Module.resumeAudioContext();
+    }
+});
+	  
     </script>
   </body>
 </html>
